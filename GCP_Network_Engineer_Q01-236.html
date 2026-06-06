@@ -451,6 +451,8 @@
     }
     body.pw-locked { overflow: hidden; }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({startOnLoad:true, theme:"neutral"});</script>
 </head>
 <body class="pw-locked">
 
@@ -2397,6 +2399,8 @@
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Cloud NAT 동작 원리</strong>외부 IP 없는 VM이 인터넷에 나갈 때 Cloud NAT가 공유 외부 IP로 변환해줌. 하지만 VM에 외부 IP가 이미 있으면 그 IP로 직접 나가기 때문에 Cloud NAT를 거치지 않음. 마치 집에 개인 차가 있으면 공유 셔틀버스를 타지 않는 것과 같음.</div>
+      <div class="concept-item"><strong>정문 (인터넷 게이트웨이 &amp; 로드밸런서)</strong> — 손님(스마트폰 앱 사용자)들이 우리 매장에 자유롭게 들어와서 음식을 주문하도록 활짝 열어둔 '고객용 정문 입구'입니다. 외부에서 안으로 들어오는 트래픽을 허용하기 위해 공개된 외부 IP와 로드밸런서를 사용합니다.</div>
+      <div class="concept-item"><strong>뒷문 (Cloud NAT)</strong> — 주방장(내부 서버)들이 외부 시장에 가서 식재료(보안 업데이트)를 안전하게 사 오기 위해 도어락을 걸고 사용하는 '직원 전용 일방통행 뒷문'입니다. 내부 VM이 외부 IP 없이도 인터넷에 나갈 수 있게 해주되, 외부에서 먼저 들어오는 것은 차단합니다.</div>
     </div>
   </div>
 </div>
@@ -10365,6 +10369,23 @@
       <strong>Untrusted VPC</strong>: Trusted VPC(10.128.0.0/9)로 가는 패킷을 NVA(ilb-untrusted)로 보내는 경로<br>
       <strong>Trusted VPC</strong>: 응답 패킷이 Untrusted VPC(10.0.0.0/23)로 돌아가도록 NVA(ilb-trusted)를 다음 홉으로 설정<br>
       두 ILB가 NVA의 고가용성을 보장합니다.
+      <br><br>
+      <strong>📐 네트워크 구성 그림</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.6;">
+온프레미스 (사무실)
+      |
+      | HA VPN
+      |
+[Untrusted VPC]  ←→  [멀티-NIC VM 쌍]  ←→  [Trusted VPC]
+  10.0.0.0/23      (NIC1)     (NIC2)        10.128.0.0/9</pre>
+      <br>
+      <strong>🔍 문제의 핵심</strong><br>
+      사무실 → Untrusted VPC 경로는 ✅ OK<br>
+      사무실 → Trusted VPC 경로는 ❌ 응답 없음<br><br>
+      왜? 패킷이 멀티-NIC VM을 통과할 때 <strong>돌아오는 길(리턴 경로)</strong>을 모르기 때문입니다.
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.6;">
+사무실 → VPN → Untrusted VPC → VM → Trusted VPC  ✅ (도착)
+사무실 ← VPN ← Untrusted VPC ← VM ← Trusted VPC  ❌ (길을 모름)</pre>
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -10379,6 +10400,17 @@
     <div class="concepts">
       <div class="concept-item"><strong>멀티 NIC NVA (Network Virtual Appliance)</strong> — 여러 VPC에 네트워크 인터페이스(NIC)를 가진 VM으로, VPC 간 트래픽 검사·라우팅을 담당합니다. Untrusted(외부) VPC와 Trusted(내부) VPC 사이에서 방화벽·프록시 역할을 합니다. 두 VPC가 직접 피어링하지 않고 NVA를 통해서만 통신하게 하여 보안을 강화합니다.</div>
       <div class="concept-item"><strong>내부 패스스루 NLB를 다음 홉으로 (ILB as Next Hop)</strong> — VM 개별 IP 대신 내부 LB IP를 정적 경로의 다음 홉으로 설정하면, LB가 살아있는 VM으로만 트래픽을 전달하여 고가용성을 보장합니다. 특정 VM이 죽어도 LB가 다른 VM으로 우회하므로 서비스가 중단되지 않습니다.</div>
+      <div class="concept-item"><strong>Untrusted VPC</strong> — 외부(인터넷/사무실)와 연결되는 바깥쪽 네트워크입니다. 누구든 접근할 수 있는 열린 공간으로, 마치 건물의 외부 로비처럼 신뢰할 수 없는 트래픽이 오가는 영역입니다.</div>
+      <div class="concept-item"><strong>Trusted VPC</strong> — 내부 서비스가 있는 안쪽 네트워크입니다. 검증된 트래픽만 들어올 수 있는 보안 구역으로, 마치 직원만 출입 가능한 사무실 내부처럼 중요한 리소스가 보호되는 영역입니다.</div>
+      <div class="concept-item"><strong>멀티-NIC VM</strong> — 두 네트워크에 동시에 발을 걸치고 있는 방화벽/라우터 역할 VM입니다. Untrusted VPC와 Trusted VPC 모두에 NIC(네트워크 인터페이스)를 갖고 있어, 외부에서 들어온 트래픽을 검사한 후 내부로 전달하거나 차단하는 "경비원 + 문지기" 역할을 합니다.</div>
+      <div class="concept-item"><strong>NVA (Network Virtual Appliance, 네트워크 가상 어플라이언스)</strong> — 여기선 멀티-NIC VM들을 묶어서 부르는 말입니다. 방화벽/라우터 역할을 하는 VM 그룹으로, 물리적 네트워크 장비(방화벽 박스 등)를 소프트웨어 VM으로 대체한 개념입니다.</div>
+      <div class="concept-item"><strong>UIG (Unmanaged Instance Group, 비관리형 인스턴스 그룹)</strong> — VM들을 하나의 그룹으로 묶는 단위입니다. 로드밸런서가 트래픽을 분산할 대상 그룹으로 사용됩니다. Managed IG와 달리 자동 확장·자동 복구 기능 없이 수동으로 관리하는 그룹입니다.</div>
+      <div class="concept-item"><strong>nva-uig (NVA용 Unmanaged Instance Group)</strong> — 멀티-NIC VM 쌍을 하나의 그룹으로 묶은 것입니다. 로드밸런서가 이 그룹을 대상으로 트래픽을 분산하여 NVA 인스턴스들이 함께 부하를 처리합니다.</div>
+      <div class="concept-item"><strong>ILB (Internal Load Balancer, 내부 로드밸런서)</strong> — 클라우드 내부 트래픽을 VM들에게 분산해주는 장치입니다. 단일 VM에 트래픽이 몰리거나 VM이 죽어도 다른 VM으로 자동 우회하여 단일 장애점(SPOF)을 없애주는 핵심 구성요소입니다.</div>
+      <div class="concept-item"><strong>ilb-untrusted (Untrusted VPC의 ILB)</strong> — Untrusted VPC 쪽에서 외부 트래픽을 받아 NVA VM으로 전달하는 로드밸런서입니다. 외부에서 들어오는 트래픽의 첫 번째 분배 지점 역할을 합니다.</div>
+      <div class="concept-item"><strong>ilb-trusted (Trusted VPC의 ILB)</strong> — Trusted VPC 쪽에서 트래픽을 받아 NVA VM으로 전달하는 로드밸런서입니다. NVA를 통과한 트래픽이 내부 서비스로 나가기 전 최종 분배를 담당합니다.</div>
+      <div class="concept-item"><strong>Static Route (정적 라우트)</strong> — "이 목적지로 가려면 이 경로를 써라"고 수동으로 지정하는 길 안내판입니다. 자동으로 경로를 학습하는 동적 라우팅(BGP 등)과 달리, 관리자가 직접 지정하므로 예측 가능하고 명확하지만 변경 시 수동 업데이트가 필요합니다.</div>
+      <div class="concept-item"><strong>Next hop (다음 경유지)</strong> — 패킷이 목적지로 가는 도중 다음으로 거쳐야 할 지점입니다. 정적 라우트에서 "이 목적지는 저 ILB IP로 보내라"처럼 지정하며, ILB를 next hop으로 설정하면 LB가 살아있는 NVA로 트래픽을 전달합니다.</div>
     </div>
   </div>
 </div>
@@ -10471,6 +10503,27 @@
     <div class="explanation">
       <strong>해설</strong><br>
       <strong>정책 기반 경로(PBR)</strong>로 프론트엔드→백엔드 트래픽을 NVA로 우회시킵니다. PBR은 특정 소스(프론트엔드 서브넷)에서 특정 목적지(백엔드 서브넷)로 가는 트래픽을 다른 경로(ilb1 → NVA)로 보냅니다. NVA가 Source NAT를 수행하므로 백엔드의 응답은 NVA IP로 돌아오고, NVA가 프론트엔드로 전달합니다.
+      <br><br>
+      같은 건물(VPC) 안에서도 두 구역 사이에 반드시 보안 검색대(NVA)를 통과하도록, 양쪽 구역에 <strong>"검색대 경유" 이정표(정적 라우트)</strong>를 세우고, 답장도 반드시 검색대로 오도록 <strong>Source NAT로 발신인 주소를 바꿔주는 것</strong>이 핵심!
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+1. Frontend → Backend 요청
+
+   Frontend VM
+      ↓ (이정표: NVA로 가!)
+      ↓
+   [ILB] → [NVA 방화벽]  ← 여기서 패킷 검사
+               ↓ (Source NAT: 발신인 = NVA IP로 변경)
+           Backend VM
+
+
+2. Backend → Frontend 답장
+
+           Backend VM
+              ↓ (이정표: NVA로 가!)
+              ↓
+           [ILB] → [NVA 방화벽]  ← 여기서도 검사
+                       ↓ (원래 IP 복원)
+                   Frontend VM</pre>
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -10485,6 +10538,27 @@
     <div class="concepts">
       <div class="concept-item"><strong>정책 기반 경로 (Policy-based Route, PBR)</strong> — 일반 정적 경로가 "목적지 IP가 X이면 Y로 보내라"인 반면, PBR은 "출발지 IP가 A이고 목적지 IP가 B인 패킷만 C로 보내라"와 같이 더 세밀한 조건으로 라우팅을 제어합니다. 프론트엔드 VM의 트래픽만 NVA를 통하도록 강제할 때 사용합니다.</div>
       <div class="concept-item"><strong>Source NAT를 하는 NVA의 트래픽 흐름</strong> — NVA가 Source NAT(소스 주소 변환)를 수행하면 백엔드 VM은 트래픽이 NVA에서 오는 것으로 인식합니다. 백엔드의 응답은 NVA로 돌아가고, NVA가 원래 프론트엔드 VM으로 전달합니다. 이 덕분에 응답 트래픽에 별도의 PBR이 필요하지 않습니다.</div>
+      <div class="concept-item"><strong>NVA (Network Virtual Appliance)</strong> — 공항 보안 검색대와 같습니다. 가방(패킷)을 열어서 안에 뭐가 있는지 확인하고, 위험한 물건이 있으면 통과를 차단하며, 문제 없으면 목적지로 보내줍니다. "Virtual"은 실제 물리 장비가 아닌 소프트웨어 VM으로 만든 것이라는 뜻입니다.
+      <pre style="background:#f1f3f4;padding:10px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.6;">
+가방(패킷)을 열어서 안에 뭐가 있는지 확인
+위험한 물건이 있으면 통과 차단
+문제 없으면 목적지로 보내줌
+"Virtual" = 실제 장비가 아닌 소프트웨어로 만든 것</pre></div>
+      <div class="concept-item"><strong>Full Network Proxy (전체 네트워크 프록시)</strong> — 비서가 전화를 대신 받아주는 상황과 같습니다. 트래픽을 "중간에서 완전히 가로채서" 검사하며, 단순히 지나가는 게 아니라 완전히 받았다가 다시 보내는 방식입니다.
+      <pre style="background:#f1f3f4;padding:10px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.6;">
+발신자 → [비서] → 수신자
+          ↑
+     여기서 내용 확인 가능
+
+트래픽을 "중간에서 완전히 가로채서" 검사
+단순히 지나가는 게 아니라 완전히 받았다가 다시 보냄</pre></div>
+      <div class="concept-item"><strong>Source NAT (소스 NAT)</strong> — 편지를 대신 보내주는 심부름꾼과 같습니다. NVA가 패킷의 발신인 주소를 자신의 IP로 바꿔서 보내기 때문에, 백엔드 VM의 답장이 반드시 NVA를 통해 돌아오게 됩니다.
+      <pre style="background:#f1f3f4;padding:10px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.6;">
+원본:   "발신인: Frontend VM" → Backend VM
+NAT 후: "발신인: NVA 방화벽" → Backend VM
+
+왜 필요? → 답장(리턴 트래픽)이 반드시
+           NVA를 통해 돌아오게 하기 위해</pre></div>
     </div>
   </div>
 </div>
@@ -10524,6 +10598,22 @@
     <div class="answer-box">정답: A</div>
     <div class="explanation"><strong>해설</strong><br>
       VPC 피어링은 기본적으로 동적 경로(Cloud Router가 BGP로 학습한 온프레미스 경로)를 자동으로 전달하지 않습니다. 허브 Cloud Router에서 <strong>커스텀 학습 경로 내보내기(export custom learned routes)</strong>를 활성화하고, 각 스포크 피어링 연결에서 <strong>커스텀 경로 가져오기(import custom routes)</strong>를 활성화하면, 온프레미스 경로가 스포크 VPC로 전파됩니다. 이것이 가장 적은 노력으로 문제를 해결하는 방법입니다.
+      <br><br>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+🏢 본사 건물 (온프레미스)
+       |
+       | 전용 엘리베이터
+       |
+  🏠 관리동 (허브 VPC)
+  /           \
+🏠 101동    🏠 102동   (스포크 VPC들)</pre>
+      <strong>문제 상황</strong><br>
+      관리동 ↔ 본사: ✅ 통화 가능<br>
+      101동 ↔ 본사: ❌ 연결 안 됨<br>
+      102동 ↔ 본사: ❌ 연결 안 됨<br><br>
+      101동, 102동에 <strong>"본사 가는 길 지도"</strong>를 나눠줘야 합니다.<br>
+      GCP에서 이 "지도"를 <strong>경로(Route)</strong>라고 부르고, Cloud Router가 이 경로 정보를 BGP라는 방식으로 자동으로 배워서 광고합니다.<br>
+      문제는 Cloud Router가 허브 VPC에만 있고, 스포크 VPC에는 <strong>"본사 가는 길"이 전달되지 않고 있다</strong>는 것입니다.
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -10836,6 +10926,21 @@
     <div class="answer-box">정답: A</div>
     <div class="explanation"><strong>해설</strong><br>
       PDF 기준 정답은 A입니다. HTTP(S) LB의 헬스 체크가 실패하는 일반적인 이유 중 하나는 VM에 외부 IP가 없어 LB가 VM에 직접 도달하지 못하는 경우입니다. <code>gcloud compute instances add-access-config</code>로 임시 또는 고정 외부 IP를 추가하여 해결할 수 있습니다. 실제로는 방화벽 규칙(보기 B)이 더 일반적인 해결책이지만, 이 문제의 맥락에서는 A가 정답입니다.
+      <br><br>
+      <strong>⚠️ 실전 분석: A가 정답인지 재검토</strong><br>
+      <code>add-access-config</code>는 인스턴스에 외부 IP(Ephemeral IP)를 추가하는 명령입니다.<br>
+      <pre style="background:#f1f3f4;padding:10px;border-radius:6px;font-size:0.85rem;overflow-x:auto;">gcloud compute instances add-access-config instance-1</pre>
+      헬스체크 실패 시나리오와 인과관계가 전혀 없습니다.<br>
+      &bull; 헬스체크는 LB의 헬스체커 → 인스턴스로 들어오는 트래픽<br>
+      &bull; 외부 IP 유무는 이 경로에 영향 없음<br>
+      &bull; Internal LB든 External LB든 헬스체크 실패의 원인은 <strong>방화벽이 압도적으로 많음</strong>
+      <br><br>
+      <strong>📌 출제 의도 — 시험 공식 패턴</strong><br>
+      이 문제는 GCP 시험에서 자주 나오는 패턴입니다:<br>
+      <div style="background:#e8f0fe;border-left:4px solid #1a73e8;padding:10px 14px;margin:8px 0;border-radius:0 6px 6px 0;font-size:0.9rem;">
+        <strong>"헬스체크 실패 = 방화벽에서 <code>130.211.0.0/22</code>, <code>35.191.0.0/16</code> INGRESS 허용 누락"</strong><br>
+        이 조합은 거의 공식처럼 외워두는 게 좋습니다. Network Engineer 시험에도 동일하게 출제됩니다.
+      </div>
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -11359,6 +11464,20 @@
     <div class="answer-box">정답: C</div>
     <div class="explanation"><strong>해설</strong><br>
       Cloud Run의 <strong>최솟값 인스턴스(minimum instances)</strong>를 2로 설정하면, 리비전이 트래픽을 받기 전에도 항상 2개의 인스턴스가 준비(warm) 상태로 대기합니다. 이 설정으로 콜드 스타트(cold start) 없이 트래픽 전환이 즉시 이루어질 수 있습니다. 트래픽을 전환하기 전에 준비 완료 상태를 보장하는 올바른 방법입니다.
+      <br><br>
+      <strong>① Cloud Run 인스턴스란?</strong><br>
+      &bull; 내 앱이 실제로 돌아가는 "서버 한 칸"<br>
+      &bull; 요청이 오면 켜지고, 없으면 꺼짐 (기본 동작)<br>
+      &bull; 꺼져있다가 켜지면 → <strong>콜드 스타트 (느림 ❄️)</strong>
+      <br><br>
+      <strong>② Idle(유휴) 인스턴스란?</strong><br>
+      &bull; 요청을 처리 중이 아니지만, <strong>켜진 채로 대기중인 인스턴스</strong><br>
+      &bull; 손님이 오자마자 바로 응답 가능 (웜 상태 🔥)
+      <br><br>
+      <strong>문제가 원하는 설정</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+새 버전 배포 시 → 인스턴스 2개가 idle 상태로 준비될 때까지
+→ 트래픽을 보내지 않는다</pre>
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -11477,6 +11596,97 @@
     <div class="concepts">
       <div class="concept-item"><strong>restricted.googleapis.com vs private.googleapis.com</strong> — 둘 다 구글 API에 접근하는 특수 도메인이지만 목적이 다릅니다. private.googleapis.com은 인터넷 없이 내부 네트워크에서 구글 API 접근용이고, restricted.googleapis.com은 여기에 더해 VPC Service Controls(데이터 유출 방지 울타리)까지 적용된 더 엄격한 버전입니다. 마치 일반 회원 출입문 vs. 보안 검색대를 통과해야 하는 VIP 출입문의 차이입니다.</div>
       <div class="concept-item"><strong>기본 경로 변경 (Default Route Override)</strong> — 기본적으로 모든 인터넷 트래픽은 GCP 인터넷 게이트웨이로 나갑니다. 기본 경로(0.0.0.0/0)를 온프레미스 방화벽 어플라이언스로 바꾸면, 구글 API 트래픽도 온프레미스 검사를 받은 후 전달됩니다. 마치 모든 택배를 먼저 창고 보안팀(온프레미스 방화벽)이 검사한 후 배달하는 것과 같습니다.</div>
+      <div class="concept-item"><strong>VPC Service Controls — 쉽게 이해하기</strong>
+        <br><br>
+        <strong>한 줄 요약:</strong> "GCP 서비스 주변에 보이지 않는 울타리를 치는 것"
+        <br><br>
+        <strong>📖 비유로 이해하기</strong>
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.7;">
+[울타리 없을 때]
+해커가 직원 계정 탈취
+    ↓
+집에서도 GCS 접근 가능 😱 → 데이터 유출!
+
+[VPC Service Controls 적용 후]
+해커가 직원 계정 탈취
+    ↓
+집에서 GCS 접근 시도
+    ↓
+❌ 차단! "너 울타리 밖이잖아" → 계정이 털려도 데이터 안전 🔒</pre>
+        <strong>핵심 개념: Service Perimeter (서비스 경계)</strong>
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.7;">
+┌─────────────────────────────────┐
+│         Service Perimeter       │
+│  (허가된 구역)                    │
+│                                 │
+│   [Cloud Storage]  [BigQuery]   │
+│   [Cloud SQL]      [Pub/Sub]    │
+│                                 │
+│   ← 이 안에서만 접근 가능         │
+└─────────────────────────────────┘
+        ↑ 울타리
+외부에서는 계정이 있어도 접근 불가</pre>
+        <strong>일반 IAM과의 차이</strong><br>
+        &bull; <strong>IAM</strong>: "누가" 접근하나 → 사원증 확인<br>
+        &bull; <strong>VPC Service Controls</strong>: "어디서" 접근하나 → 건물 자체가 허가 구역 밖이면 사원증 있어도 입장 불가<br>
+        &bull; 계정 탈취 시 IAM만으로는 위험 😱, VPC SC는 안전 🔒
+        <br><br>
+        <strong>실제로 막아주는 것들</strong><br>
+        &bull; ① 데이터 탈취: 악의적 내부자가 외부 GCS 버킷으로 복사 시도 → 경계 밖 버킷이라 차단 ❌<br>
+        &bull; ② 계정 탈취 후 외부 접근: 해커 PC에서 접근 시도 → 허가된 네트워크 아니라 차단 ❌<br>
+        &bull; ③ 잘못된 설정으로 인한 노출: 버킷 공개 설정 실수 → 경계 밖에서는 접근 불가 ❌
+        <br><br>
+        <strong>📌 시험 팁:</strong> "데이터 유출 방지", "경계 기반 보안" 키워드 → VPC Service Controls를 떠올리면 됩니다.
+      </div>
+      <div class="concept-item"><strong>CNAME 레코드 — 쉽게 이해하기</strong>
+        <br><br>
+        <strong>한 줄 정리:</strong> A 레코드 = 실제 집 주소 / CNAME = 그 집의 별명
+        <br><br>
+        <strong>📖 실생활 예시</strong><br>
+        실제 이름: 김철수 / 별명: 철수, 김대리, 팀장님<br>
+        → 어떻게 불러도 같은 사람에게 연결됨. CNAME도 똑같습니다.
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.7;">
+실제 주소 (A 레코드):
+  myapp.run.app  →  1.2.3.4 (실제 IP)
+
+별명 (CNAME):
+  www.내도메인.com  →  myapp.run.app
+
+결과:
+  www.내도메인.com 입력
+      ↓
+  myapp.run.app 로 연결
+      ↓
+  1.2.3.4 (실제 서버) 도착 ✅</pre>
+        <strong>A 레코드 vs CNAME 레코드</strong>
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.7;">
+A 레코드:  내도메인.com      →  1.2.3.4
+                                (IP 직접)
+
+CNAME:     www.내도메인.com  →  내도메인.com  →  1.2.3.4
+                                (거쳐서 감)</pre>
+        <strong>CNAME이 유용한 이유</strong><br>
+        <br>
+        &bull; <strong>① IP가 바뀌어도 한 곳만 수정</strong><br>
+        &nbsp;&nbsp;A 레코드 1개만 수정하면 www, shop, blog 전부 자동 반영 ✅<br>
+        &nbsp;&nbsp;(CNAME 없었다면 모든 서브도메인을 일일이 수정해야 함 😓)<br><br>
+        &bull; <strong>② 외부 서비스 연결할 때 필수</strong><br>
+        &nbsp;&nbsp;Cloud Run, GitHub Pages, Vercel 등은 IP를 직접 알려주지 않음<br>
+        &nbsp;&nbsp;→ 대신 도메인 주소를 주고 CNAME으로 연결하도록 안내
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.7;">
+실제 사용 예시 (쇼핑몰 운영):
+
+shop.내도메인.com   →  내도메인.com  (CNAME)
+www.내도메인.com    →  내도메인.com  (CNAME)
+blog.내도메인.com   →  내도메인.com  (CNAME)
+         ↓
+내도메인.com        →  1.2.3.4      (A 레코드)
+
+→ IP 바뀌면 A 레코드 1개만 수정하면 끝! 🎉</pre>
+        <strong>⚠️ 주의사항</strong><br>
+        &bull; 루트 도메인(내도메인.com)엔 CNAME 사용 불가 — DNS 표준 규칙<br>
+        &bull; 해결: ALIAS 레코드 또는 A 레코드 사용 (Cloud DNS에선 루트도 설정 가능)
+      </div>
     </div>
   </div>
 </div>
@@ -11633,6 +11843,51 @@
     <div class="concepts">
       <div class="concept-item"><strong>NVA (Network Virtual Appliance, 멀티 NIC VM)</strong> — 두 개의 서로 다른 네트워크 인터페이스를 가진 VM으로, 두 VPC 사이의 "통관 검사소" 역할을 합니다. 한쪽 VPC에서 들어온 트래픽을 검사하거나 변환한 후 다른 VPC로 전달합니다. 보안 정책 적용에 유용합니다.</div>
       <div class="concept-item"><strong>관리형 인스턴스 그룹 (MIG)</strong> — 동일한 VM을 여러 개 자동으로 관리하는 그룹입니다. VM이 죽으면 자동으로 새 VM을 생성하고, 부하에 따라 수를 늘리거나 줄입니다. 마치 편의점 아르바이트생이 그만두면 자동으로 새 아르바이트생을 구해주는 시스템과 같습니다.</div>
+      <div class="concept-item"><strong>NVA (Network Virtual Appliance) — 쉽게 이해하기</strong>
+        <br><br>
+        <strong>한 줄 요약:</strong> "네트워크 교차로에 세운 검문소 직원"
+        <br><br>
+        <strong>📖 비유로 이해하기</strong>
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.7;">
+[NVA 없을 때]
+VPC A (개발팀)  ←→  VPC B (운영팀)
+         직접 연결 — 아무나 통과 😱
+
+[NVA 있을 때]
+VPC A (개발팀)
+    ↓
+  [NVA VM] ← 여기서 검사 (방화벽 규칙·패킷 검사·로그 기록)
+    ↓
+VPC B (운영팀)</pre>
+        <strong>NVA가 필요한 상황</strong><br><br>
+        &bull; <strong>① VPC 간 트래픽을 "들여다봐야" 할 때</strong> — 일반 GCP 방화벽은 IP/포트 기반 차단만 가능. NVA(Palo Alto, Fortinet 등)는 패킷 내용 분석·악성코드 탐지·특정 파일 전송 차단까지 가능 ✅<br><br>
+        &bull; <strong>② 규정/컴플라이언스 요구사항</strong> — 금융권·의료기관 등 "모든 트래픽을 승인된 보안 장비 통과" 의무 → GCP 기본 기능으론 충족 불가, NVA 필수<br><br>
+        &bull; <strong>③ 온프레미스 보안 정책을 그대로 가져올 때</strong> — 기존 Cisco/Palo Alto 방화벽 정책을 VM으로 올려 정책 일관성 유지
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.7;">
+NVA의 멀티 NIC 구조:
+
+        VPC A (내부망)
+           |
+         [NIC 0]
+           |
+        [NVA VM]
+           |
+         [NIC 1]
+           |
+        VPC B (외부망)
+→ 두 네트워크 사이에 물리적으로 끼어있어 모든 트래픽이 반드시 통과</pre>
+        <strong>GCP 기본 서비스 vs NVA 선택 기준</strong><br>
+        &bull; ✅ GCP 기본으로 충분: 단순 IP/포트 차단(Cloud Firewall), 웹 DDoS 방어(Cloud Armor), 침입 감지만(Cloud IDS), 서비스 간 안전 연결(PSC)<br>
+        &bull; ❌ NVA 필요: 패킷 내용 검사(DPI), 온프레미스 장비 정책 유지, 금융/의료 컴플라이언스, 트래픽 차단+감지 동시에
+        <br><br>
+        <strong>⚠️ NVA의 단점</strong><br>
+        &bull; 비용 💸 — VM을 24시간 켜놔야 함<br>
+        &bull; 병목 현상 🐢 — 모든 트래픽이 한 VM을 통과하므로 NVA가 느리면 전체가 느려짐<br>
+        &bull; 관리 복잡성 😓 — VM 업데이트·장애 대응을 직접 해야 함
+        <br><br>
+        <strong>한 줄 정리:</strong> GCP 기본 방화벽 = 아파트 출입문 잠금 / NVA = 24시간 경비원이 가방까지 열어서 검사. 필요할 때 강력하지만 비용과 복잡성이 따라옴.
+      </div>
+      <div class="concept-item"><strong>페일오버 (Failover) — 한 줄 정리</strong> — 페일오버 = 메인이 죽으면 백업이 자동으로 치고 나옴. 목표는 단 하나: <strong>사용자가 장애를 느끼지 못하게.</strong></div>
     </div>
   </div>
 </div>
@@ -11786,6 +12041,47 @@
     <div class="explanation"><strong>해설</strong><br>
       두 가지 목표를 동시에 달성합니다: ①일반 VM 트래픽 → 온프레미스 스크러빙, ②Google API 트래픽 → VPC 내 직접 처리.<br><br>
       <strong>C의 핵심 구성</strong>: 기본 경로 삭제 + 온프레미스에서 0.0.0.0/0 광고 → 일반 트래픽은 온프레미스로. <code>private.googleapis.com</code>(199.36.153.8/30)으로 DNS CNAME → Google API 트래픽은 이 특수 IP로. 이 IP에 대한 정적 경로를 인터넷 게이트웨이로 지정 → Google API 트래픽만 VPC에서 직접 처리.
+      <br><br>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+일반 트래픽      → 데이터센터 경유 (검사)
+Google API 트래픽 → 직접 통신 (VPC 안에서 해결)</pre>
+      <strong>핵심 개념 2가지</strong><br><br>
+      <strong>① Cloud Interconnect</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+GCP VPC ←────────────→ 회사 데이터센터
+         전용 물리 회선
+         (인터넷 아님, 전용선)
+
+→ 빠르고 안전
+→ 여기를 통해 보안 검사(트래픽 스크러빙)</pre>
+      <strong>② Private Google Access</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+VM이 외부 IP 없어도
+Google API (Cloud Storage 등)에
+VPC 안에서 직접 접근 가능하게 해주는 기능
+
+→ 트래픽이 인터넷으로 안 나감
+→ 구글 내부망으로 통신</pre>
+      <strong>트래픽 흐름 정리</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+VM
+ │
+ ├─── Google API 트래픽 (Cloud Storage 등)
+ │         ↓
+ │    Private Google Access
+ │         ↓
+ │    VPC 안에서 직접 구글로 ✅
+ │    (데이터센터 경유 안함)
+ │
+ └─── 그 외 일반 트래픽
+           ↓
+      Cloud Interconnect
+           ↓
+      회사 데이터센터
+           ↓
+      보안 검사(스크러빙)
+           ↓
+      인터넷으로 나감 ✅</pre>
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -11800,6 +12096,27 @@
     <div class="concepts">
       <div class="concept-item"><strong>private.googleapis.com (199.36.153.8/30)</strong> — VM이 인터넷 없이 Google API에 접근하기 위한 특수 도메인입니다. 이 IP 대역으로 향하는 트래픽은 Google의 내부 네트워크로 직접 전달됩니다. 마치 사내 전용 내선 번호처럼, 인터넷을 거치지 않고 구글 서비스에 접근하는 전용 경로입니다.</div>
       <div class="concept-item"><strong>트래픽 스크러빙 (Traffic Scrubbing)</strong> — 네트워크 트래픽을 필터링하여 악성 트래픽, DDoS, 비정상 패킷 등을 제거하는 과정입니다. 마치 정수 필터가 물 속 불순물을 걸러내는 것처럼, 온프레미스 보안 장비가 모든 VM 트래픽을 검사하고 정화합니다.</div>
+      <div class="concept-item"><strong>CNAME 레코드 — 쉽게 이해하기</strong>
+        <br><br>
+        실제 이름: 김철수 / 별명: 철수, 김대리, 팀장님 → 어떻게 불러도 같은 사람에게 연결됨. CNAME도 똑같습니다.
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.7;">
+실제 주소 (A 레코드):
+  myapp.run.app  →  1.2.3.4 (실제 IP)
+
+별명 (CNAME):
+  www.내도메인.com  →  myapp.run.app
+
+결과:
+  www.내도메인.com 입력
+      ↓
+  myapp.run.app 로 연결
+      ↓
+  1.2.3.4 (실제 서버) 도착 ✅</pre>
+        <strong>A 레코드 vs CNAME 레코드</strong>
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.82rem;overflow-x:auto;line-height:1.7;">
+A 레코드:  내도메인.com      →  1.2.3.4        (IP 직접 — 실제 집 주소)
+CNAME:     www.내도메인.com  →  내도메인.com   (거쳐서 감 — 별명/닉네임)</pre>
+      </div>
     </div>
   </div>
 </div>
@@ -11842,6 +12159,55 @@
     <div class="answer-box">정답: A, D</div>
     <div class="explanation"><strong>해설</strong><br>
       공인 IP 없는 VM이 방화벽 우회하여 Google API 접근: ① <strong>서브넷 수준 Private Google Access 활성화</strong> → 사설 IP VM이 Google API의 외부 IP에 접근 가능. ② <strong>Google API 외부 IP 범위에 대한 커스텀 정적 경로</strong>(인터넷 게이트웨이 경유) → 0.0.0.0/0 방화벽 경로보다 더 구체적인 경로가 우선 적용되어 Google API 트래픽이 방화벽을 우회합니다.
+      <br><br>
+      <strong>📋 문제 상황 먼저 파악하기</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+설정:
+0.0.0.0/0 → 방화벽 VM
+= 모든 트래픽이 방화벽 통과
+
+문제:
+BigQuery, Pub/Sub 접근할 때도
+방화벽을 거쳐서 감 😓
+→ 느려짐, 불필요한 트래픽
+→ 구글 서비스인데 굳이 방화벽 거칠 필요 없잖아?</pre>
+      <strong>💡 비유로 이해하기</strong><br>
+      회사 보안 정책: "모든 인터넷 트래픽은 보안팀 검사 후 내보내"<br>
+      근데 사내 시스템(구글 워크스페이스)도 보안팀 경유? → 굳이 그럴 필요 없음! 사내 시스템은 바로 접속하면 됨.
+      <br><br>
+      <strong>✅ 정답 1: Private Google Access 활성화</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+서브넷 설정에서 ON 하면:
+외부 IP 없는 VM도 Google API에 접근 가능
+
+트래픽 경로:
+VM → 구글 내부망 → BigQuery/Pub/Sub
+(인터넷 안 나감, 방화벽 안 거침) ✅
+
+GCP 콘솔: VPC → 서브넷 → 수정 → Private Google Access: ON</pre>
+      <strong>✅ 정답 2: Google API 전용 경로 추가</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+현재: 0.0.0.0/0  →  방화벽 VM (모든 트래픽)
+
+추가: 199.36.153.4/30  →  default-internet-gateway
+     (restricted.googleapis.com — 구글 API 전용 특별 주소)
+
+→ Google API 트래픽은 방화벽 거치지 말고 직접 구글로!</pre>
+      <strong>🔄 최종 트래픽 흐름</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+VM (외부 IP 없음)
+ │
+ ├── BigQuery / Pub/Sub 요청
+ │        ↓
+ │   199.36.153.4/30 경로
+ │        ↓
+ │   구글 내부망 직접 접근 ✅ (방화벽 안 거침)
+ │
+ └── 그 외 일반 트래픽
+          ↓
+     0.0.0.0/0 경로
+          ↓
+     방화벽 VM 통과 → 보안 검사 후 인터넷 ✅</pre>
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -12419,6 +12785,24 @@
     <div class="answer-box">정답: D</div>
     <div class="explanation"><strong>해설</strong><br>
       GCP 방화벽의 암묵적 deny-all 규칙(기본 규칙)은 로깅을 지원하지 않습니다. 차단된 트래픽 로그를 남기려면 <strong>명시적 deny-all 규칙을 낮은 우선순위(65500)로 생성하고 로깅을 활성화</strong>해야 합니다. 이 규칙이 허용 규칙들을 통과하지 못한 모든 트래픽을 잡아 로그를 생성합니다. VPC Flow Logs는 방화벽에 의해 차단된 인그레스 트래픽은 기록하지 않습니다(차단된 패킷은 VM에 도달하지 않으므로).
+      <br><br>
+      <strong>📖 아파트 단지 비유로 이해하기</strong><br><br>
+      회사 개발팀을 위해 새로운 아파트 단지(Dev VPC)를 만들고, 정문 경비 아저씨(방화벽)에게 지시를 내렸습니다.<br>
+      <em>"웹사이트 손님(HTTP)만 들여보내시고, 들어온 손님 이름은 방명록(Stackdriver Logging)에 꼭 적어주세요!"</em>
+      <br><br>
+      그런데 며칠 뒤, 관리자가 서버를 원격 조종하려고 <strong>원격 접속(RDP)</strong>을 시도했더니 경비 아저씨가 막아서 들어갈 수 없었습니다. "대체 왜 막힌 거지? 경비 아저씨가 막았으면 방명록에 기록이 있겠지?" 하고 블랙박스(Stackdriver Logging)를 열어보았는데, 놀랍게도 <strong>'RDP를 차단했다'는 기록이 단 한 줄도 없는 상황</strong>입니다.
+      <br><br>
+      <strong>🎭 주요 등장인물 & 비유</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.8;">
+VPC network Dev           →  새로 지은 개발용 아파트 단지
+Firewall rule (allow HTTP) →  경비실 규칙 1번: 웹사이트 손님만 통과
+Enabled logging            →  방명록 작성 기능 켜기
+                               (우리는 '규칙 1번'에 대해서만 방명록을 쓰라고 켜뒀음)
+RDP                        →  관리자의 원격 조종 출입증
+                               (HTTP가 아니라서 경비실에서 쫓겨남)
+Stackdriver Logging        →  클라우드 관제실의 블랙박스/방명록</pre>
+      <strong>🔍 왜 RDP 차단 기록이 없을까?</strong><br>
+      방명록(로깅)은 <strong>"규칙 1번(HTTP 허용)"에만</strong> 켜져 있기 때문입니다. RDP는 규칙 1번을 통과 못하고 GCP의 암묵적 기본 차단(implicit deny-all)에 걸립니다. 그런데 이 기본 차단 규칙은 <strong>로깅 기능 자체가 없습니다</strong>. 결과적으로 RDP가 차단되어도 아무 기록도 남지 않는 것입니다.
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -12523,6 +12907,15 @@
     <div class="answer-box">정답: D</div>
     <div class="explanation"><strong>해설</strong><br>
       온프레미스 호스트명 확인을 위한 양방향 DNS 설정이 필요합니다. ①GCP 인스턴스 → 온프레미스 DNS: Shared VPC에 <strong>인바운드 쿼리 전달 DNS 정책</strong> 구성 + 온프레미스를 대체 DNS 서버로 지정. ②Google Cloud 사설 존의 인바운드 전달기 IP를 온프레미스 DNS 서버에 등록. 이렇게 하면 GCP 인스턴스가 온프레미스 호스트명을 조회할 때 온프레미스 DNS로 전달되어 해석됩니다.
+      <br><br>
+      <strong>📖 비유로 이해하기</strong><br><br>
+      "여러 부서가 하나의 도로망을 공유(Shared VPC)하고 있을 때, 본사 컴퓨터 이름표를 해석해 주는 <strong>'전화번호부 연결 데스크(DNS Forwarding)'</strong>는 도대체 어느 프로젝트(방)에 설치해야 가장 올바른 설계일까요?"
+      <br><br>
+      구글이 권장하는 정답의 방향은 명확합니다.
+      <br><br>
+      &bull; 입주민 세대(서비스 프로젝트)마다 전화번호부를 따로 만들면 관리도 힘들고 돈도 낭비됩니다.<br>
+      &bull; 도로망의 진짜 주인인 <strong>관리사무소(호스트 프로젝트)</strong>에 중앙 집중형으로 '본사행 전화번호부 안내 데스크(Cloud DNS 전달 영역)'를 딱 1개만 설치합니다.<br>
+      &bull; 그러면 공유 도로망(Shared VPC)에 연결된 모든 입주민 부서 컴퓨터들은 별도의 세팅 없이도, 관리사무소에 설치된 안내 데스크를 통해 본사 컴퓨터 이름을 자동으로 알아듣고 통신할 수 있게 됩니다.
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -12537,6 +12930,8 @@
     <div class="concepts">
       <div class="concept-item"><strong>Cloud DNS 인바운드 전달기 (Inbound Forwarder)</strong> — GCP VPC 안으로 들어오는 DNS 쿼리를 받아주는 특수 IP입니다(35.199.192.0/19 범위). 온프레미스 DNS 서버가 GCP의 도메인을 물어볼 때 이 IP로 쿼리를 보냅니다. 마치 외부 손님(온프레미스 DNS)이 건물 안내 데스크(인바운드 전달기)에 물어보는 것과 같습니다.</div>
       <div class="concept-item"><strong>DNS 정책 (DNS Policy)</strong> — VPC 수준에서 DNS 동작을 제어하는 설정입니다. "인바운드 쿼리 전달 허용"을 켜면 GCP 인스턴스가 VPC 외부(온프레미스) DNS 서버에 쿼리를 전달할 수 있습니다. "대체 DNS 서버"로 온프레미스 DNS를 지정하면 GCP 인스턴스가 알 수 없는 도메인을 온프레미스 DNS에게 물어봅니다.</div>
+      <div class="concept-item"><strong>Inbound Forwarder IP (외부 전화 수신 전용 콜센터)</strong> — 본사에 있는 온프레미스 DNS에게 이렇게 지시해 둡니다. "야, 네가 모르는 아파트 주민 이름이 나오면, 아파트에 설치된 <strong>'외부 전화 수신 전용 콜센터(Inbound Forwarder IP)'</strong>로 전화를 넘겨버려!" — GCP가 제공하는 특수 IP 주소로, 온프레미스 DNS가 GCP 내부 도메인을 해석해야 할 때 쿼리를 이 IP로 전달합니다. 마치 아파트 외부에서 입주민을 찾아올 수 있는 "수신 전용 대표 번호"와 같습니다.</div>
+      <div class="concept-item"><strong>Alternative DNS Server (대체 전화번호부 — 플랜 B)</strong> — 아파트 입주민(GCP 서버)이 누군가의 이름표를 물어봤는데 아파트 자체 전화번호부에 없는 이름일 때, 예전에는 "없는 번호입니다"로 에러가 났겠지만, 이제는 <strong>"아파트 장부에 없으면 본사 전화번호부(Alternative DNS)에 대신 물어봐라!"</strong>라고 융통성 있게 전화를 넘깁니다. 이렇게 하면 아파트 컴퓨터가 본사 컴퓨터 이름을 물어봤을 때 알아서 본사로 질문이 넘어가 정답을 찾아옵니다. 동시에 본사에서 걸려오는 전화도 받을 수 있게 수신 허용(allow inbound)도 함께 켜줍니다.</div>
     </div>
   </div>
 </div>
@@ -12680,6 +13075,19 @@
     <div class="answer-box">정답: A</div>
     <div class="explanation"><strong>해설</strong><br>
       BGP 세션 설정 시 "내 관점"으로 설정해야 합니다. 고객사(상대방)의 ASN은 64517이므로 Peer ASN은 64517이 맞습니다. 고객사 기준 "로컬 BGP"(169.254.11.1)는 상대방 주소이므로 우리 쪽 Peer BGP IP가 됩니다. 반대로 고객사의 "피어 BGP"(169.254.11.2)는 우리 쪽 로컬 주소입니다. Cloud Router의 기본 MED는 100이며, 고객사의 Base MED 1000은 상대방이 광고할 때 쓰는 값이므로 우리 MED 설정에는 영향을 주지 않습니다.
+      <br><br>
+      <strong>📖 비유로 이해하기 — 무전기 세팅 쪽지</strong><br><br>
+      구글 클라우드와 고객사 건물 사이에 <strong>'안전한 지하 비밀 터널(IPSec VPN)'</strong>을 뚫는 공사는 무사히 끝났습니다. 그런데 터널 입구에서 차량들을 안내해야 할 '양쪽 길잡이(라우터)'들이 아직 무전기(BGP)를 켜지 않아서 길을 안내하지 못하고 있는 상황("BGP is not configured")입니다.<br><br>
+      이때, 고객사 쪽 길잡이가 우리에게 무전기 세팅 번호가 적힌 쪽지를 건네주었습니다. 우리는 이 쪽지를 보고 구글 클라우드 관리 화면에서 우리 쪽 무전기 세팅을 마저 해야 합니다.
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.8;">
+우리 쪽 세팅 (구글 클라우드 Local 설정):
+  "내 주파수는 뭐야?"   → 쪽지에서 '너(Peer)의 주파수'라고 했던  169.254.11.2
+  "내 소속 번호는 뭐야?" → 쪽지에서 '너(Peer)의 번호'라고 했던    64517
+
+상대방 세팅 (구글 클라우드 Peer 설정):
+  "상대방 주파수는 뭐야?"   → 쪽지에서 '나(Local)의 주파수'라고 했던  169.254.11.1
+  "상대방 소속 번호는 뭐야?" → 쪽지에서 '나(Local)의 번호'라고 했던    64515</pre>
+      <strong>💡 한 줄 요약:</strong> 네트워크 설정에서 'Local(나)'과 'Peer(상대방)'는 거울과 같습니다. 상대방이 준 쪽지의 <strong>'나'는 나의 세팅 화면에서 '상대방'</strong>이 되므로, 숫자들을 크로스(X자)로 바꿔서 입력해야 무전기가 서로 연결됩니다!
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -12689,7 +13097,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">Cloud VPN 터널 BGP 미구성 → 상대방 관점 파악 → <strong>Peer ASN: 64517</strong> + <strong>Local BGP: 169.254.11.2</strong> + Peer BGP: 169.254.11.1 + MED: 100</div>
+    <div class="keyword-summary">Cloud VPN tunnel + BGP not configured → customer perspective → <strong>Peer ASN: 64517</strong> + <strong>Local BGP: 169.254.11.2</strong> + Peer BGP: 169.254.11.1 + MED: 100</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>BGP ASN (Autonomous System Number)</strong> — 인터넷에서 각 네트워크 그룹(자율 시스템)을 구별하는 고유 번호입니다. 마치 나라마다 국가 코드(+82, +1 등)가 있듯이, BGP 라우터는 ASN으로 서로를 식별합니다. 내 ASN은 나(로컬), 상대방 ASN은 피어(Peer)입니다.</div>
@@ -12742,7 +13150,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">온프레미스 DNS 조회 → <strong>DNS Server Policy</strong> + Alternate DNS 192.168.20.88 → 방화벽 허용 <strong>35.199.192.0/19</strong> + Cloud Router 광고 35.199.192.0/19</div>
+    <div class="keyword-summary">on-premises DNS resolution → <strong>DNS Server Policy</strong> + Alternate DNS 192.168.20.88 → firewall allow <strong>35.199.192.0/19</strong> + Cloud Router custom route advertisement 35.199.192.0/19</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Cloud DNS 서버 정책 (DNS Server Policy)</strong> — VPC 전체에 적용되는 DNS 전달 규칙입니다. "이 VPC 안의 모든 VM은 특정 DNS 서버를 대체(Alternate)로 사용하라"고 일괄 지정할 수 있습니다. 마치 아파트 단지 전체에 "외부 도서관에 없는 책은 우리 동네 도서관에서 찾아라"는 안내를 붙이는 것과 같습니다.</div>
@@ -12786,6 +13194,23 @@
     <div class="answer-box">정답: B</div>
     <div class="explanation"><strong>해설</strong><br>
       Packet Mirroring은 VM의 실제 트래픽 페이로드(데이터 내용)를 IDS와 같은 분석 도구로 복사하여 전달하는 기능입니다. 내부 TCP/UDP 부하 분산기를 컬렉터(수신자)로 사용하면 미러링된 트래픽이 IDS 인스턴스들로 분배됩니다. Flow Logs(A, 메타데이터만)나 방화벽 로그(C, allow/deny 이벤트만)는 페이로드를 포함하지 않아 IDS 요구사항을 충족할 수 없습니다. Packet Mirroring은 TCP/UDP 기반 내부 LB만 지원하므로 HTTP(S) LB(D)는 사용할 수 없습니다.
+      <br><br>
+      <strong>📖 비유로 이해하기 — 아파트 택배 검사</strong><br><br>
+      회사(아파트 관리소)에 엄격한 새 보안 수칙이 떨어졌습니다.<br>
+      <em>"서부 2동(us-west2)에 사는 모든 입주민들이 외부로 보내는 택배의 <strong>내용물(Payload)까지 전부 뜯어서 검사</strong>하라!"</em><br><br>
+      이를 위해 서부 2동 지하실에 <strong>'최첨단 엑스레이 수하물 검사대(IDS)'</strong>를 한 대 들여놓았습니다. 이제 입주민들의 택배 배송을 방해하지 않으면서, 어떻게 모든 택배 내용물을 이 지하실 검사대로 보낼 수 있을까요?
+      <br><br>
+      <strong>🎭 주요 등장인물 & 비유</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.8;">
+VMs in us-west2        →  서부 2동 아파트 입주민들 (컴퓨터들)
+Egress traffic         →  밖으로 내보내는 데이터 (아웃바운드 택배)
+Payloads               →  택배 박스 안의 실제 내용물
+VPC Flow Logs          →  택배 겉면 송장만 기록하는 CCTV
+                           (보내는 사람/받는 사람 주소만 — 내용물 모름)
+IDS virtual appliance  →  최첨단 엑스레이 수하물 검사대 + 보안 요원
+                           (악성코드·해킹 시도를 내용물까지 파헤쳐 탐지)</pre>
+      <strong>💡 해결책: Packet Mirroring</strong><br>
+      원본 택배는 그대로 목적지로 배달하면서, 택배 사본을 몰래 복사하여 검사대(IDS)로도 동시에 보내는 방식입니다. 입주민은 배달이 지연되는 것도 모르고, 검사대는 내용물을 완전히 검사할 수 있습니다.
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -12795,7 +13220,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">IDS 페이로드 검사 → <strong>Packet Mirroring</strong> → 내부 <strong>TCP/UDP LB</strong> 컬렉터 → egress 필터 → IDS 인스턴스 그룹</div>
+    <div class="keyword-summary">IDS payload inspection → <strong>Packet Mirroring</strong> → internal <strong>TCP/UDP LB</strong> collector → egress filter → IDS instance group</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Packet Mirroring (패킷 미러링)</strong> — VM을 오가는 트래픽을 실시간으로 복사(미러)하여 보안 분석 도구(IDS 등)로 보내는 기능입니다. 마치 CCTV 영상을 원본 그대로 보안실로 동시에 보내는 것처럼, 실제 통신에 영향 없이 모든 데이터를 그대로 복제해서 검사합니다.</div>
@@ -12848,7 +13273,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">루트 URL 404 → Ingress에 <strong>default backend</strong> 미정의 → Ingress YAML spec.defaultBackend 추가 → 재적용</div>
+    <div class="keyword-summary">root URL 404 → <strong>default backend</strong> not defined in Ingress → add Ingress YAML spec.defaultBackend → reapply</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Kubernetes Ingress</strong> — 외부에서 들어오는 HTTP/HTTPS 요청을 적절한 내부 서비스(Pod)로 연결해주는 "라우팅 규칙 모음"입니다. 마치 호텔 프런트에서 "객실 예약 문의는 1번, 식당 예약은 2번, 기타는 안내 데스크로"라는 안내를 하는 것처럼 URL 경로에 따라 요청을 분배합니다.</div>
@@ -12891,6 +13316,27 @@
     <div class="answer-box">정답: A</div>
     <div class="explanation"><strong>해설</strong><br>
       계산: 최대 100개 노드 → 서브넷 /25 (128개 주소). Pod 범위: 100 × 200 = 20,000개 Pod → /17 (32,768개 주소). 서비스 범위: 1,500개 서비스 → /21 (2,048개 주소). 서비스 범위는 클러스터 생성 후 변경 불가이므로 처음부터 최대치를 고려해야 합니다. /17 + /21 조합이 요구사항을 충족하면서 주소 낭비를 최소화합니다.
+      <br><br>
+      <strong>📖 공장 단지 비유로 계산해보기</strong><br><br>
+      회사에서 엄청나게 큰 <strong>공장 단지(GKE 클러스터)</strong>를 짓고, 미래를 대비해 다음 목표를 세웠습니다: 공장 건물(Node) 100개, 공장당 직원(Pod) 200명, 내선 전화번호(Service) 1,500개.<br><br>
+      <strong>핵심 미션:</strong> IP 주소는 2의 배수 단위로만 묶어서 팝니다. 목표를 수용하는 <strong>가장 알뜰한 사이즈(minimize address consumption)</strong>로 사는 것이 질문의 진짜 의도입니다.
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.8;">
+🏭 1단계: 공장 건물(Node) 지을 땅 사기
+  필요: 100개  →  판매 단위: 64 → 128 → 256...
+  결정: 128개짜리 묶음이 가장 알뜰
+  정답: 128개 = /25
+
+👷 2단계: 직원(Pod) 앉을 자리 사기  ← 가장 복잡!
+  공장 1개당: 200명 → 256자리 묶음 (2의 배수 올림)
+  전체: 100개 공장 × 256자리 = 25,600자리 필요
+  판매 단위: 16,384 → 32,768 → 65,536...
+  결정: 32,768개짜리 묶음
+  정답: 32,768개 = /17
+
+☎️ 3단계: 내선 전화번호(Service) 묶음 사기
+  필요: 1,500개  →  판매 단위: 1,024 → 2,048 → 4,096...
+  결정: 2,048개짜리 묶음이 낭비 없이 알뜰
+  정답: 2,048개 = /21</pre>
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -12900,12 +13346,25 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">GKE VPC-native + alias IP → 노드 /25 + Pod 보조 범위 <strong>/17</strong>(100×200=20,000) + 서비스 보조 범위 <strong>/21</strong>(1,500) → 최소 주소 소비</div>
+    <div class="keyword-summary">GKE VPC-native + alias IP → node subnet /25 + Pod secondary range <strong>/17</strong> (100×200=20,000) + Service secondary range <strong>/21</strong> (1,500) → minimize address consumption</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>VPC 네이티브 클러스터 (VPC-native cluster)</strong> — Pod와 서비스에 VPC의 실제 IP 주소를 직접 할당하는 GKE 클러스터 방식입니다. 마치 아파트 단지 내 각 방(Pod)에 우편함 번호(실제 IP)를 부여해서 외부에서도 직접 찾아올 수 있게 하는 것과 같습니다. alias IP 범위를 이용합니다.</div>
       <div class="concept-item"><strong>보조 범위 (Secondary Range)</strong> — GKE VPC 네이티브 클러스터에서 Pod용, 서비스용으로 별도 할당하는 추가 IP 블록입니다. 기본 서브넷 IP와 분리되어 있어 주소 충돌을 방지합니다. 서비스 범위는 한번 설정하면 변경할 수 없으므로 처음에 충분히 크게 설계해야 합니다.</div>
-      <div class="concept-item"><strong>CIDR /n 표기법과 주소 수 계산</strong> — /n에서 n이 작을수록 주소가 많습니다. /17 = 2^(32-17) = 32,768개, /21 = 2,048개, /25 = 128개입니다. 자전거 바퀴처럼 숫자가 클수록(바퀴 살이 촘촘할수록) 공간이 좁아집니다.</div>
+      <div class="concept-item"><strong>CIDR /n 표기법과 주소 수 계산</strong> — /n에서 n이 작을수록 주소가 많습니다. /17 = 2^(32-17) = 32,768개, /21 = 2,048개, /25 = 128개입니다. 자전거 바퀴처럼 숫자가 클수록(바퀴 살이 촘촘할수록) 공간이 좁아집니다.
+        <br><br>
+        <strong>🐸 청개구리 법칙: "숫자가 1 작아지면, 크기는 2배 커진다!"</strong><br><br>
+        슬래시(<code>/</code>) 뒤 숫자는 <strong>'자물쇠로 잠가버린 공간'</strong>을 의미합니다. 자물쇠를 많이 채울수록(숫자가 클수록) 쓸 수 있는 여유 공간은 줄어들고, 자물쇠를 풀수록(숫자가 작아질수록) 공간은 2배씩 늘어납니다.
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.8;">
+/25  =       128개
+/24  =       256개  (2배 ↑)
+/23  =       512개  (2배 ↑)
+/22  =     1,024개
+/21  =     2,048개
+/20  =     4,096개
+/19  =     8,192개
+/18  =    16,384개
+/17  =    32,768개 🚀</pre></div>
     </div>
   </div>
 </div>
@@ -12953,7 +13412,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">VPN 트래픽 단일 경로 집중 → BGP ECMP 미작동 → 원인: 온프레미스 라우터 <strong>다른 ASN</strong> → 해결: 두 라우터를 <strong>동일 ASN</strong>으로 구성</div>
+    <div class="keyword-summary">VPN traffic single-path only → BGP ECMP not working → cause: on-premises routers with <strong>different ASNs</strong> → fix: configure both routers with <strong>same ASN</strong></div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>ECMP (Equal-Cost Multi-Path, 동일 비용 다중 경로)</strong> — 목적지까지 비용(우선순위)이 같은 여러 경로가 있을 때 트래픽을 자동으로 분산하는 라우팅 기술입니다. 마치 두 개의 고속도로가 같은 요금, 같은 거리로 목적지까지 연결될 때 차량을 두 도로에 나눠 보내는 것과 같습니다.</div>
@@ -13005,7 +13464,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">Shared VPC Subnet-2 Flow Logs → 서브넷 소속 확인 → <strong>서비스 프로젝트 VPC</strong>에서 VPC Flow Logs 구성</div>
+    <div class="keyword-summary">Shared VPC Subnet-2 Flow Logs → verify subnet ownership → configure VPC Flow Logs in <strong>service project VPC</strong></div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Shared VPC (공유 VPC)</strong> — 하나의 VPC 네트워크(호스트 프로젝트)를 여러 프로젝트(서비스 프로젝트)가 공유하는 구조입니다. 마치 하나의 도로망(호스트 VPC)에 여러 건물(서비스 프로젝트)이 연결되어 있는 것과 같습니다. 각 건물(서비스 프로젝트)은 자신의 구역(서브넷)에 대한 관리 권한을 가집니다.</div>
@@ -13056,7 +13515,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">인터넷용 VoIP(UDP) → <strong>Network Load Balancer</strong>(외부 패스스루) → TCP/UDP 지원 + 인터넷 연결</div>
+    <div class="keyword-summary">internet-facing VoIP (UDP) → <strong>Network Load Balancer</strong> (external passthrough) → TCP/UDP support + internet-facing</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Network Load Balancer (외부 패스스루 NLB)</strong> — 인터넷에서 들어오는 TCP 및 UDP 트래픽을 백엔드 VM으로 직접 전달하는 부하 분산기입니다. "패스스루"란 트래픽을 중간에서 변형하지 않고 그대로 통과시킨다는 뜻입니다. 마치 요금소에서 차를 검사하지 않고 그냥 통과시키는 것처럼, 패킷을 원본 그대로 전달합니다.</div>
@@ -13112,7 +13571,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">두 GCP 조직 통합 → <strong>Cloud VPN + Cloud Router</strong>(네트워크 연결) + <strong>DNS 포워딩/영역 전송</strong>(이름 해석) → 빠른 통합, 최소 다운타임</div>
+    <div class="keyword-summary">two GCP organizations integration → <strong>Cloud VPN + Cloud Router</strong> (network connectivity) + <strong>DNS forwarding / zone transfer</strong> (name resolution) → fast integration, minimal downtime</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>DNS 포워딩 (DNS Forwarding)</strong> — 자신의 DNS 서버가 모르는 도메인 쿼리를 다른 DNS 서버로 전달하는 기능입니다. 마치 "우리 회사 직원 연락처는 알지만, 파트너 회사 직원 연락처는 파트너 회사 전화번호부에 물어봐"라고 설정하는 것과 같습니다.</div>
@@ -13164,11 +13623,34 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">HA VPN 주기적 단절 + SA_DELETE → <strong>Phase 1/Phase 2 lifetime 불일치</strong> → 온프레미스 IKE 파라미터를 Google 권장값으로 수정</div>
+    <div class="keyword-summary">HA VPN periodic disconnect + SA_DELETE → <strong>Phase 1 / Phase 2 lifetime mismatch</strong> → update on-premises IKE parameters to match Google recommended values</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>IKE Phase 1 / Phase 2 Lifetime</strong> — IPsec VPN 터널을 유지하는 보안 연결(SA)에는 유효 기간이 있습니다. Phase 1은 두 장치 간 신뢰 채널을 만드는 단계, Phase 2는 실제 데이터를 암호화하는 채널을 만드는 단계입니다. 마치 사무실 출입 카드(Phase 1)와 특정 구역 접근 카드(Phase 2)가 각각 유효기간이 있어, 만료되면 재발급(재협상)이 필요한 것과 같습니다. 양측 유효기간이 다르면 한쪽이 먼저 만료되어 순간적 단절이 발생합니다.</div>
       <div class="concept-item"><strong>SA_DELETE 메시지</strong> — IPsec에서 보안 연결(SA)을 종료할 때 보내는 알림 메시지입니다. "우리 사이의 암호화 약속이 만료됐으니 다시 협상하자"는 신호입니다. 수신 측은 이를 받으면 재협상을 시작하며, 이 과정에서 약 10초간 터널이 사용 불가 상태가 됩니다.</div>
+      <div class="concept-item"><strong>IPsec VPN 터널 — 위험한 고속도로와 지하 비밀 터널</strong>
+        <br><br>
+        IPsec VPN은 회사나 클라우드 네트워크에서 보안을 위해 가장 기본적으로, 가장 많이 사용하는 기술입니다.
+        <br><br>
+        <strong>🚗 문제: 인터넷은 너무 위험해!</strong><br>
+        서울 본사와 부산 지사가 중요한 기밀문서를 주고받아야 할 때, 인터넷이라는 공공 고속도로를 쓰면 전 세계 누구나 다니는 길이라 해커(노상강도)가 언제든 택배(데이터)를 가로챌 수 있습니다.
+        <br><br>
+        <strong>🚇 VPN 터널 = "나만의 지하 비밀 터널"</strong><br>
+        공공 고속도로 대신 서울 본사와 부산 지사 사이에 <strong>아무도 모르는 가상의 지하 비밀 터널</strong>을 뚫습니다. 터널 안으로는 우리 회사 직원(데이터)들만 다닐 수 있습니다. 하늘에서 고속도로를 내려다보는 해커는 땅속 터널의 존재조차 모릅니다.
+        <br><br>
+        <strong>🛡️ IPsec = "무적의 장갑차와 특수 자물쇠"</strong>
+        <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.8;">
+암호화 (Encryption):
+  택배를 절대 안 열리는 강철 금고(장갑차)에 넣고
+  양쪽 경비원만 아는 비밀번호로 잠금
+  → 해커가 훔쳐 가도 번호 몰라서 못 열음
+
+무결성 검사 (Integrity):
+  금고에 특수 홀로그램 스티커 부착
+  도중에 누가 건드리면 스티커 훼손 → 즉시 폐기
+  → "이건 누군가 건드린 가짜다!"</pre>
+        <strong>💡 한 줄 요약:</strong> IPsec VPN 터널 = <em>"위험한 인터넷(공공 도로)을 통과할 때, 데이터를 보이지 않는 가상 터널(VPN) 속으로 다니게 하고, 그 데이터마저 절대 열리지 않는 암호화된 강철 금고(IPsec)에 넣어 안전하게 배달하는 철통 보안 시스템"</em>
+      </div>
     </div>
   </div>
 </div>
@@ -13191,32 +13673,38 @@
         <div class="choice-ko"><strong>A.</strong> 리전1에 Cloud Router 생성 + metro1-zone1-x에 연결된 VLAN 연결 2개. 리전2에 Cloud Router 생성 + metro1-zone2-x에 연결된 VLAN 연결 2개.</div>
         <div class="choice-en"><em>A. Cloud Router in region1 with 2 VLAN attachments to metro1-zone1-x. Cloud Router in region2 with 2 VLAN attachments to metro1-zone2-x.</em></div>
       </div>
-      <div class="choice correct">
-        <div class="choice-ko"><strong>B.</strong> 리전1에 Cloud Router 생성 + metro1-zone1-x에 연결된 VLAN 연결 1개. 리전2에 Cloud Router 생성 + metro2-zone2-x에 연결된 VLAN 연결 2개. ✓</div>
+      <div class="choice">
+        <div class="choice-ko"><strong>B.</strong> 리전1에 Cloud Router 생성 + metro1-zone1-x에 연결된 VLAN 연결 1개. 리전2에 Cloud Router 생성 + metro2-zone2-x에 연결된 VLAN 연결 2개.</div>
         <div class="choice-en"><em>B. Cloud Router in region1 with 1 VLAN attachment to metro1-zone1-x. Cloud Router in region2 with 2 VLAN attachments to metro2-zone2-x.</em></div>
       </div>
       <div class="choice">
         <div class="choice-ko"><strong>C.</strong> 리전1에 Cloud Router 생성 + metro1-zone2-x에 연결된 VLAN 연결 1개. 리전2에 Cloud Router 생성 + metro2-zone2-x에 연결된 VLAN 연결 1개.</div>
         <div class="choice-en"><em>C. Cloud Router in region1 with 1 VLAN attachment to metro1-zone2-x. Cloud Router in region2 with 1 VLAN attachment to metro2-zone2-x.</em></div>
       </div>
-      <div class="choice">
-        <div class="choice-ko"><strong>D.</strong> 리전1에 Cloud Router 생성 + metro1-zone1-x 1개 + metro1-zone2-x 1개. 리전2에 Cloud Router 생성 + metro2-zone1-x 1개 + metro2-zone2-x 1개.</div>
+      <div class="choice correct">
+        <div class="choice-ko"><strong>D.</strong> 리전1에 Cloud Router 생성 + metro1-zone1-x 1개 + metro1-zone2-x 1개. 리전2에 Cloud Router 생성 + metro2-zone1-x 1개 + metro2-zone2-x 1개. ✓</div>
         <div class="choice-en"><em>D. Cloud Router in region1 with 1 VLAN to metro1-zone1-x and 1 VLAN to metro1-zone2-x. Cloud Router in region2 with 1 VLAN to metro2-zone1-x and 1 VLAN to metro2-zone2-x.</em></div>
       </div>
     </div>
-    <div class="answer-box">정답: B</div>
+    <div class="answer-box" style="background:#fce8e6;color:#c5221f;">⚠️ PDF 정답: B → 실제 정답: D (PDF 오류)</div>
     <div class="explanation"><strong>해설</strong><br>
-      Partner Interconnect 지역 이중화(geo-redundancy)를 위해서는 각 리전이 해당 메트로의 VLAN 연결을 가져야 합니다. PDF 정답 기준으로 리전1은 metro1에 1개의 VLAN 연결, 리전2는 metro2에 2개의 VLAN 연결을 구성합니다. 중요한 것은 각 리전이 <strong>서로 다른 메트로</strong>(리전1 → 메트로1, 리전2 → 메트로2)에 연결되어 지리적 이중화가 달성된다는 점입니다. A는 두 리전 모두 metro1을 사용하여 지역 이중화가 되지 않습니다.
+      <div style="background:#fce8e6;border-left:4px solid #c5221f;padding:10px 14px;margin-bottom:12px;border-radius:0 6px 6px 0;font-size:0.9rem;">
+        <strong>⚠️ PDF 정답(B)과 다릅니다!</strong><br>
+        PDF는 B를 정답으로 제시하지만, 이는 Google 공식 권장 사항과 다릅니다. 실제 시험에서는 <strong>D가 올바른 답</strong>입니다.
+      </div>
+      Google의 Partner Interconnect <strong>99.99% SLA 권장 토폴로지</strong>는 각 리전에서 해당 메트로의 <strong>두 존(zone1, zone2)에 VLAN을 1개씩</strong> 배치하는 것입니다. 메트로 내 존 장애(zone-level failure)와 리전 장애(geo-level failure) 양쪽을 동시에 대비합니다.<br><br>
+      <strong>D의 구성</strong>: 리전1 → metro1-zone1 + metro1-zone2 / 리전2 → metro2-zone1 + metro2-zone2 → 총 VLAN 4개로 진정한 지역 + 존 이중화 달성.<br><br>
+      PDF 정답 B는 리전1에 VLAN 1개(단일 존), 리전2에 VLAN 2개(동일 존)로 비대칭·불완전한 구성입니다.
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
       <div class="wrong-item"><span class="wrong-label">A✗</span><span class="wrong-reason">리전2가 metro1-zone2에 연결되어 있어 두 리전 모두 metro1을 사용합니다. 지리적 이중화 목적인 metro1과 metro2 분리가 이루어지지 않습니다.</span></div>
       <div class="wrong-item"><span class="wrong-label">C✗</span><span class="wrong-reason">각 리전에 VLAN 연결이 1개씩만 있어 단일 장애 지점(SPOF)이 존재합니다. VLAN 연결이 끊어지면 해당 리전의 연결이 완전히 중단됩니다.</span></div>
-      <div class="wrong-item"><span class="wrong-label">D✗</span><span class="wrong-reason">각 리전에 다른 메트로 존에 VLAN을 2개씩 구성하는 것은 더 높은 비용이 들며, Google 권장 사항의 표준 구성과 다릅니다.</span></div>
+      <div class="wrong-item"><span class="wrong-label">B✗</span><span class="wrong-reason">리전1에 VLAN 1개(단일 존), 리전2에 VLAN 2개(동일 존)로 비대칭 구성입니다. 각 리전에서 두 존에 걸친 이중화가 없어 존 장애 시 연결이 끊깁니다. PDF 정답이지만 Google 공식 권장 사항과 다릅니다.</span></div>
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">Partner Interconnect 지역 이중화 → 리전1 + <strong>metro1 VLAN 1개</strong> / 리전2 + <strong>metro2 VLAN 2개</strong> → 서로 다른 메트로 → 지리적 이중화 달성</div>
+    <div class="keyword-summary">Partner Interconnect 99.99% SLA → region1: <strong>metro1-zone1 + metro1-zone2</strong> (1 VLAN each) / region2: <strong>metro2-zone1 + metro2-zone2</strong> (1 VLAN each) → zone + geo redundancy</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Partner Interconnect</strong> — Google과 직접 전용선 계약 대신 파트너 통신사를 통해 GCP와 온프레미스를 연결하는 서비스입니다. 마치 인터넷 회선을 직접 KT/SKT와 계약하는 대신 건물 내 통신 관리 업체를 통해 연결하는 것과 같습니다. Dedicated Interconnect보다 유연하고 소규모 대역폭도 지원합니다.</div>
@@ -13268,7 +13756,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">IoT 센서 데이터 + sub-millisecond 지연 → <strong>Bigtable</strong> → 고처리량 시계열 NoSQL → 1밀리초 미만 일관된 지연</div>
+    <div class="keyword-summary">IoT sensor data + sub-millisecond latency → <strong>Bigtable</strong> → high-throughput time-series NoSQL → consistent sub-ms latency</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Cloud Bigtable</strong> — 수십억 행의 데이터를 1밀리초 미만으로 읽고 쓸 수 있는 Google의 NoSQL 와이드컬럼 데이터베이스입니다. IoT 센서, 금융 거래, 사용자 행동 로그 등 시간 순서로 쌓이는 대용량 데이터에 최적화되어 있습니다. 마치 무한 용량의 초고속 자동 창고처럼, 수십억 개의 물건(데이터)을 단 몇 밀리초 안에 꺼내올 수 있습니다.</div>
@@ -13311,6 +13799,31 @@
     <div class="answer-box">정답: C</div>
     <div class="explanation"><strong>해설</strong><br>
       Cloud NGFW의 방화벽 엔드포인트는 <strong>리전(region) 수준</strong>에서 생성합니다. 엔드포인트를 생성한 후 VPC 네트워크와 연결(associate)하고, 방화벽 정책 규칙에서 L7 검사(침입 방지, TLS 검사 등)를 활성화합니다. 존(zone) 수준이 아닌 리전 수준으로 생성하는 것이 고가용성과 확장성을 보장합니다.
+      <br><br>
+      <strong>📐 Cloud NGFW 구성 참고 도식</strong>
+      <div class="mermaid" style="background:#f8f9fa;padding:16px;border-radius:8px;margin-top:8px;">
+flowchart TD
+    Internet["🌐 외부 인터넷"]
+    OnPrem["🏢 본사 (On-Premises)"]
+    subgraph VPC ["☁️ 구글 클라우드 VPC (아파트 단지)"]
+        IGW["🚪 인터넷 게이트웨이"]
+        VG["🚇 VPN / 전용선 통로"]
+        subgraph NGFW_Layer ["🔥 Cloud NGFW (단지 전체에 깔린 투명한 엑스레이 보안망)"]
+            direction TB
+            subgraph SubnetA ["🏢 101동 (서브넷 A)"]
+                VM1["💻 웹 서버"]
+            end
+            subgraph SubnetB ["🏢 102동 (서브넷 B)"]
+                VM2["🗄️ DB 서버"]
+            end
+        end
+    end
+    Internet --> IGW
+    OnPrem --> VG
+    IGW -.-> |"1. 외부에서 들어올 때 검사 (North-South)"| NGFW_Layer
+    VG -.-> |"2. 본사에서 들어올 때 검사"| NGFW_Layer
+    VM1 <.-> |"3. 🚨 내부 서버끼리 통신할 때도 무조건 검사 (East-West)"| VM2
+      </div>
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -13320,7 +13833,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">Cloud NGFW IPS → <strong>리전</strong>에 방화벽 엔드포인트 생성 → VPC 네트워크 연결 → 방화벽 정책 규칙으로 <strong>L7 검사</strong> 활성화</div>
+    <div class="keyword-summary">Cloud NGFW IPS → create firewall endpoint within <strong>region</strong> → associate to VPC network → enable <strong>L7 inspection</strong> via firewall policy rule</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Cloud NGFW (차세대 방화벽)</strong> — 단순히 포트/IP를 차단하는 기존 방화벽을 넘어, 트래픽 내용(L7)까지 검사하여 악성 코드, 침입 시도, 취약점 공격 등을 탐지·차단하는 GCP 관리형 서비스입니다. 마치 공항 보안 검색대가 가방 외형만 보는 게 아니라 X선으로 내부까지 검사하는 것처럼, 패킷 내용을 깊이 분석합니다.</div>
@@ -13372,7 +13885,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">테스트용 하이브리드 연결 + 최저 비용 + 24시간 내 → <strong>Cloud VPN</strong> → 인터넷 기반 IPsec 터널 → 즉시 설정 가능</div>
+    <div class="keyword-summary">test hybrid connectivity + lowest cost + within 24 hours → <strong>Cloud VPN</strong> → internet-based IPsec tunnel → quick setup</div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Cloud VPN vs Cloud Interconnect 비교</strong> — Cloud VPN은 인터넷 위에 암호화된 가상 전용 터널을 만드는 것으로, 마치 일반 도로에 투명 방음 터널을 설치하는 것과 같습니다. 설치가 빠르고 저렴하지만 공공 인터넷을 거쳐 속도가 가변적입니다. Cloud Interconnect는 GCP까지 물리적 전용선을 직접 연결하는 것으로, 마치 내 집에서 목적지까지 전용 고속도로를 새로 건설하는 것과 같습니다. 안정적이고 빠르지만 설치 시간과 비용이 큽니다.</div>
@@ -13414,6 +13927,32 @@
     <div class="answer-box">정답: D</div>
     <div class="explanation"><strong>해설</strong><br>
       존 간 이그레스 비용을 최소화하면서 웹 트래픽만 모니터링하려면: (1) 패킷 미러링 정책은 <strong>존별로 3개</strong> 생성 — 각 존의 트래픽을 해당 존 내에서 미러링하여 존 간 트래픽을 줄입니다. (2) 컬렉터 인스턴스 그룹은 <strong>리전 1개</strong>만 — 같은 리전 내이므로 존 간 비용을 최소화하면서 컬렉터 관리를 단순화합니다. (3) <strong>instance-tags</strong> 기반 매칭 — 특정 웹 서버만 선택적으로 미러링 가능. (4) <strong>TCP 필터</strong> — 웹 트래픽(80/443)만 미러링하여 UDP 게임 트래픽은 제외합니다.
+      <br><br>
+      <strong>📦 Collector(수집기)란 무엇인가?</strong><br>
+      복사된 쌍둥이 택배들을 잔뜩 모아두고 엑스레이를 찍어보는 <strong>'검사 창고 및 보안 요원들'</strong>입니다. 패킷 미러링으로 복사된 패킷을 받아서 분석하는 도착지(로드밸런서 뒤의 보안용 인스턴스들)를 Collector라고 부릅니다.
+      <br><br>
+      <strong>🎮 상황 설명</strong><br>
+      거대한 게임 회사 서버들이 A·B·C구역(Zone a, b, c)에 퍼져 있습니다.<br>
+      &bull; 웹사이트용 택배: TCP 80, 443번<br>
+      &bull; 게임용 택배: UDP (빠르게 움직이는 게임 통신)<br><br>
+      미션: <strong>"웹사이트 택배만 복사해서 검사하되, 구역 간 이동 통행료(inter-zonal egress cost)를 최대한 0원으로 만들어라!"</strong>
+      <br><br>
+      <strong>💸 기술적 딜레마 — 왜 돈이 많이 들까?</strong><br>
+      수집 창고를 A구역에만 하나 지어놓으면, B·C구역의 복사 패킷을 A구역으로 옮길 때마다 <strong>구역 간 전송 요금(Egress cost)</strong>이 발생합니다. 원본도 아닌 복사본 때문에 통행료 폭탄을 맞을 수는 없습니다. 게다가 UDP 게임 트래픽까지 모두 복사하면 복사 비용도 폭증합니다.
+      <br><br>
+      <strong>✅ 첫 번째 조치 — 통행료 안 내는 법</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+"A, B, C 구역 각각에 수집기(Collector)를 따로따로 세워라!"
+
+A구역 복사본 → A구역 창고  (구역 이동 없음 → 통행료 0원)
+B구역 복사본 → B구역 창고  (구역 이동 없음 → 통행료 0원)
+C구역 복사본 → C구역 창고  (구역 이동 없음 → 통행료 0원)</pre>
+      <strong>✅ 두 번째 조치 — 복사 비용 안 내는 법</strong>
+      <pre style="background:#f1f3f4;padding:12px;border-radius:6px;font-size:0.85rem;overflow-x:auto;line-height:1.7;">
+"복사기(Policy)에 필터를 달아서 TCP 80, 443번만 복사하게 설정하라!"
+
+→ UDP 게임 트래픽은 복사 대상에서 제외
+→ 패킷 미러링 Policy에 TCP 포트 80/443 필터 지정</pre>
     </div>
     <div class="wrong-answers">
       <strong>오답 해설</strong>
@@ -13423,7 +13962,7 @@
     </div>
     <hr class="divider">
     <div class="section-label">핵심 키워드 요약</div>
-    <div class="keyword-summary">존 간 이그레스 비용 최소화 + 웹 트래픽 모니터링 → 존별 <strong>3개 정책</strong>(instance-tags + TCP 필터) + <strong>리전 1개 컬렉터 그룹</strong></div>
+    <div class="keyword-summary">minimize inter-zonal egress cost + web traffic monitoring → <strong>3 policies per zone</strong> (instance-tags + TCP filter) + <strong>1 regional collector group</strong></div>
     <div class="section-label">등장 개념 설명</div>
     <div class="concepts">
       <div class="concept-item"><strong>Packet Mirroring 정책 범위 (Zonal)</strong> — 패킷 미러링 정책은 존(zone) 단위로 생성됩니다. 따라서 3개 존(a, b, c)에 걸쳐 인프라가 있으면 존마다 정책을 하나씩 만들어야 합니다. 마치 아파트 동마다 CCTV 녹화 설정을 따로 해야 하는 것과 같습니다.</div>
